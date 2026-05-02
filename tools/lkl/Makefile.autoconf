@@ -63,6 +63,11 @@ define virtio_net_vde
   LDLIBS += $(shell pkg-config --libs vdeplug)
 endef
 
+define virtio_net_slirp
+  $(call set_autoconf_var,VIRTIO_NET_SLIRP,y)
+  LDLIBS += $(shell pkg-config --libs slirp)
+endef
+
 define zpoline_conf
   $(eval zpoline_dir=$(abspath $(srctree)/$(1)))
   $(if $(strip $(foreach f, $(zpoline_dir), $(wildcard $(f)/libzpoline.so))),$(call set_autoconf_var,ZPOLINE_DIR,$(zpoline_dir)))
@@ -83,6 +88,7 @@ define posix_host
   $(if $(filter $(1),elf64-littleriscv),$(call riscv64_host))
   $(if $(filter yes,$(dpdk)),$(call virtio_net_dpdk))
   $(if $(filter yes,$(vde)),$(call virtio_net_vde))
+  $(if $(strip $(call find_include,slirp/libslirp.h)),$(call virtio_net_slirp))
   $(if $(strip $(call find_include,fuse3/fuse.h)),$(call set_autoconf_var,FUSE,y))
   $(if $(strip $(call find_include,archive.h)),$(call set_autoconf_var,ARCHIVE,y))
   $(if $(strip $(call find_include,linux/if_tun.h)),$(call set_autoconf_var,VIRTIO_NET_MACVTAP,y))
