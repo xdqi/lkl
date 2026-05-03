@@ -160,6 +160,9 @@ class Installer:
         # needed for i386
         self.defines.add("__NR_stime")
 
+        # needed for inotify_init (deprecated, not in generic unistd.h)
+        self.defines.add("__NR_inotify_init")
+
     def update_header(self, h):
         print("  REPLACE\t%s" % h)
         content = open(h).read()

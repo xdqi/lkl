@@ -440,6 +440,10 @@ EXPORT_SYMBOL_GPL(svc_rpcb_cleanup);
 
 static int svc_uses_rpcbind(struct svc_serv *serv)
 {
+#ifdef CONFIG_LKL
+	/* LKL has no rpcbind daemon; skip registration entirely */
+	return 0;
+#else
 	unsigned int		p, i;
 
 	for (p = 0; p < serv->sv_nprogs; p++) {
@@ -454,6 +458,7 @@ static int svc_uses_rpcbind(struct svc_serv *serv)
 	}
 
 	return 0;
+#endif
 }
 
 int svc_bind(struct svc_serv *serv, struct net *net)
@@ -1153,6 +1158,10 @@ int svc_register(const struct svc_serv *serv, struct net *net,
 		 const int family, const unsigned short proto,
 		 const unsigned short port)
 {
+#ifdef CONFIG_LKL
+	/* LKL has no rpcbind daemon; skip registration entirely */
+	return 0;
+#else
 	unsigned int		p, i;
 	int			error = 0;
 
@@ -1177,6 +1186,7 @@ int svc_register(const struct svc_serv *serv, struct net *net,
 	}
 
 	return error;
+#endif /* CONFIG_LKL */
 }
 
 /*
