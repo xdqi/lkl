@@ -21,7 +21,7 @@ $(obj)/file2alias.o: $(obj)/$(devicetable-offsets-file)
 quiet_cmd_elfconfig = MKELF   $@
       cmd_elfconfig = $(obj)/mk_elfconfig < $< > $@
 
-$(obj)/elfconfig.h: $(obj)/empty.o $(obj)/mk_elfconfig FORCE
+#$(obj)/elfconfig.h: $(obj)/empty.o $(obj)/mk_elfconfig FORCE
 	$(call if_changed,elfconfig)
 
 targets += elfconfig.h

@@ -246,6 +246,18 @@ static void *mem_alloc(unsigned long size)
 	return malloc(size);
 }
 
+static void *page_alloc(unsigned long size)
+{
+	return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE,
+			    PAGE_EXECUTE_READWRITE);
+}
+
+static void page_free(void *addr, unsigned long size)
+{
+	(void)size;
+	VirtualFree(addr, 0, MEM_RELEASE);
+}
+
 struct lkl_host_operations lkl_host_ops = {
 	.panic = panic,
 	.thread_create = thread_create,
@@ -273,6 +285,8 @@ struct lkl_host_operations lkl_host_ops = {
 	.print = print,
 	.mem_alloc = mem_alloc,
 	.mem_free = free,
+	.page_alloc = page_alloc,
+	.page_free = page_free,
 	.ioremap = lkl_ioremap,
 	.iomem_access = lkl_iomem_access,
 	.virtio_devices = lkl_virtio_devs,
