@@ -21,7 +21,13 @@ $(obj)/file2alias.o: $(obj)/$(devicetable-offsets-file)
 quiet_cmd_elfconfig = MKELF   $@
       cmd_elfconfig = $(obj)/mk_elfconfig < $< > $@
 
-#$(obj)/elfconfig.h: $(obj)/empty.o $(obj)/mk_elfconfig FORCE
+# For PE/COFF targets (LKL on Windows), empty.o is not ELF so mk_elfconfig
+# fails. Generate a static elfconfig.h instead.
+ifneq ($(filter pe-%,$(CONFIG_OUTPUT_FORMAT)),)
+$(obj)/elfconfig.h: FORCE
+	$(Q)echo '#define KERNEL_ELFCLASS ELFCLASS64' > $@
+	$(Q)echo '#define KERNEL_ELFDATA ELFDATA2LSB' >> $@
+else
+$(obj)/elfconfig.h: $(obj)/empty.o $(obj)/mk_elfconfig FORCE
 	$(call if_changed,elfconfig)
-
-targets += elfconfig.h
+endif

@@ -15,6 +15,9 @@ endif
 LINUXINCLUDE := -isystem arch/lkl/include/system $(LINUXINCLUDE)
 # workaround for https://gcc.gnu.org/bugzilla/show_bug.cgi?id=52991
 KBUILD_CFLAGS += -mno-ms-bitfields -D__DISABLE_EXPORTS
+# Prevent .text.unlikely/.text.hot subsections so that .pdata/.xdata
+# stay in single sections and UnwindData offsets remain valid after linking
+KBUILD_CFLAGS += -fno-reorder-blocks-and-partition
 else ifneq (,$(CONFIG_OUTPUT_FORMAT))
 $(error Unrecognized platform: $(CONFIG_OUTPUT_FORMAT))
 endif
@@ -83,7 +86,7 @@ archprepare: arch/lkl/include/generated/uapi/asm/config.h
 all: lkl.o arch/lkl/include/generated/uapi/asm/syscall_defs.h
 
 lkl.o: vmlinux
-	$(OBJCOPY) $(if $(KEEP_EH_FRAMES),,-R .eh_frame) -R .syscall_defs $(foreach sym,$(LKL_ENTRY_POINTS),-G$(prefix)$(sym)) --prefix-symbols=$(prefix) vmlinux lkl.o
+	$(OBJCOPY) -O $(CONFIG_OUTPUT_FORMAT) $(if $(KEEP_EH_FRAMES),,-R .eh_frame) -R .syscall_defs -R .comment $(foreach sym,$(LKL_ENTRY_POINTS),-G$(prefix)$(sym)) --prefix-symbols=$(prefix) vmlinux lkl.o
 
 arch/lkl/include/generated/uapi/asm/syscall_defs.h: vmlinux
 	$(OBJCOPY) -j .syscall_defs -O binary --set-section-flags .syscall_defs=alloc $< $@

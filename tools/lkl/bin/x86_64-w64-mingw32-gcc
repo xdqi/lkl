@@ -1,0 +1,28 @@
+#!/bin/bash
+# Shim for x86_64-w64-mingw32-gcc
+#
+# Routes compilation to:
+#   - Native cygwin cross-gcc (LP64, MS ABI, direct COFF) for kernel code (-D__KERNEL__)
+#   - Real Linux mingw64 gcc for user-space code (LLP64)
+
+REAL_MINGW_GCC="/usr/bin/x86_64-w64-mingw32-gcc"
+CYGWIN_GCC="/usr/bin/x86_64-pc-cygwin-gcc"
+
+# Check if this is kernel code (has -D__KERNEL__ flag)
+IS_KERNEL=0
+for arg in "$@"; do
+    if [[ "$arg" == "-D__KERNEL__" ]]; then
+        IS_KERNEL=1
+        break
+    fi
+done
+
+# User-space code: use real mingw gcc (LLP64, fast, native)
+# Use -B to make gcc find our patched ld for linking
+LKL_BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ $IS_KERNEL -eq 0 ]]; then
+    exec "$REAL_MINGW_GCC" -B"$LKL_BIN_DIR/" "$@"
+fi
+
+# Kernel code: native cygwin cross-gcc (LP64, COFF output, debug symbols)
+exec "$CYGWIN_GCC" "$@"

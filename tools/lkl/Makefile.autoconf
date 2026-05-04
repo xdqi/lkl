@@ -102,20 +102,19 @@ define nt64_host
   $(call set_autoconf_var,NEEDS_LARGP,y)
   $(call set_autoconf_var,VIRTIO_NET,y)
   $(call set_autoconf_var,NT64,y)
-  CFLAGS += -Wl,--enable-auto-image-base -Wl,--image-base -Wl,0x10000000 \
-	 -Wl,--out-implib=$(OUTPUT)liblkl.dll.a -Wl,--export-all-symbols \
-	 -Wl,--enable-auto-import
-  LDFLAGS +=-Wl,--image-base -Wl,0x10000000 -Wl,--enable-auto-image-base \
-	   -Wl,--out-implib=$(OUTPUT)liblkl.dll.a -Wl,--export-all-symbols \
-	   -Wl,--enable-auto-import -s
+  $(if $(strip $(shell pkg-config --cflags slirp 2>/dev/null)),\
+    $(call set_autoconf_var,VIRTIO_NET_SLIRP,y)\
+    LDLIBS_tests/net-test-y += $(shell pkg-config --libs slirp 2>/dev/null))
 endef
 
 define nt_host
   $(call set_autoconf_var,NT,y)
+  $(call set_autoconf_var,VIRTIO_NET,y)
+  $(call set_kernel_config,INIT_STACK_ALL_ZERO,n)
   KOPT = "KALLSYMS_EXTRA_PASS=1"
   KOPT += "HOSTCFLAGS=-Wno-char-subscripts"
   KOPT += "HOSTLDFLAGS=-s"
-  LDLIBS += -lws2_32
+  LDLIBS += -lws2_32 -liphlpapi
   EXESUF := .exe
   SOSUF := .dll
   CFLAGS += -Iinclude/mingw32

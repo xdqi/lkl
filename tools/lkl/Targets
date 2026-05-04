@@ -34,7 +34,8 @@ tests-priv-y := tests/tests-common
 tests-y := tests/disk
 tests-y += tests/boot
 tests-y += tests/disk-vfio-pci
-tests-y += tests/net-test
+tests-$(LKL_HOST_CONFIG_NT64) += tests/net-test
+tests-$(LKL_HOST_CONFIG_POSIX) += tests/net-test
 tests-y += tests/config
 ifneq ($(LKL_HOST_CONFIG_BSD),y)
 tests-y += tests/test-dlmopen
