@@ -208,7 +208,7 @@ static void CALLBACK timer_callback(void *arg, BOOLEAN TimerOrWaitFired)
 		t->callback();
 }
 
-static int timer_set_oneshot(void *timer, unsigned long ns)
+static int timer_set_oneshot(void *timer, __lkl_ulong_t ns)
 {
 	struct timer *t = (struct timer *)timer;
 	HANDLE tmp;
@@ -241,18 +241,18 @@ static void print(const char *str, int len)
 	write(1, str, len);
 }
 
-static void *mem_alloc(unsigned long size)
+static void *mem_alloc(__lkl_ulong_t size)
 {
 	return malloc(size);
 }
 
-static void *page_alloc(unsigned long size)
+static void *page_alloc(__lkl_ulong_t size)
 {
 	return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE,
 			    PAGE_EXECUTE_READWRITE);
 }
 
-static void page_free(void *addr, unsigned long size)
+static void page_free(void *addr, __lkl_ulong_t size)
 {
 	(void)size;
 	VirtualFree(addr, 0, MEM_RELEASE);
@@ -292,6 +292,9 @@ struct lkl_host_operations lkl_host_ops = {
 	.virtio_devices = lkl_virtio_devs,
 	.jmp_buf_set = jmp_buf_set,
 	.jmp_buf_longjmp = jmp_buf_longjmp,
+	.memcpy = memcpy,
+	.memset = memset,
+	.memmove = memmove,
 };
 
 int handle_get_capacity(struct lkl_disk disk, unsigned long long *res)

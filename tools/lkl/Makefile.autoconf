@@ -115,6 +115,7 @@ define nt_host
   KOPT += "HOSTCFLAGS=-Wno-char-subscripts"
   KOPT += "HOSTLDFLAGS=-s"
   LDLIBS += -lws2_32 -liphlpapi
+  LDFLAGS += -Wl,--image-base,0x10000
   EXESUF := .exe
   SOSUF := .dll
   CFLAGS += -Iinclude/mingw32
