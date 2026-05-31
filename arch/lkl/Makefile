@@ -15,6 +15,15 @@ endif
 LINUXINCLUDE := -isystem arch/lkl/include/system $(LINUXINCLUDE)
 # workaround for https://gcc.gnu.org/bugzilla/show_bug.cgi?id=52991
 KBUILD_CFLAGS += -mno-ms-bitfields -D__DISABLE_EXPORTS
+else ifneq (,$(filter wasm32 wasm64,$(exec_format)))
+# wasm has no PIC concept distinct from the relocatable object model;
+# emcc / Joel's clang already emit position-independent wasm.
+#
+# EXPORT_SYMBOL's inline-asm path emits a label in .export_symbol that wasm-as
+# rejects ("data symbols must have a size set with .size"). The pe path
+# sidesteps this with __DISABLE_EXPORTS; do the same for wasm - wasm symbol
+# export is driven by the linker (WASM_SYMBOL_EXPORTED flag), not a section.
+KBUILD_CFLAGS += -D__DISABLE_EXPORTS
 else ifneq (,$(CONFIG_OUTPUT_FORMAT))
 $(error Unrecognized platform: $(CONFIG_OUTPUT_FORMAT))
 endif
@@ -82,13 +91,36 @@ archprepare: arch/lkl/include/generated/uapi/asm/config.h
 
 all: lkl.o arch/lkl/include/generated/uapi/asm/syscall_defs.h
 
+ifneq (,$(filter wasm32 wasm64,$(exec_format)))
+# llvm-objcopy on wasm only supports section dumping, removal, and addition -
+# no -G<sym> (keep only listed globals), no --prefix-symbols=. We don't need
+# either: wasm symbol visibility is encoded per-symbol at compile time
+# (WASM_SYMBOL_VISIBILITY_HIDDEN), and the LKL ABI is reached through the
+# wasm exports table set up by the final embedder link, not through naming.
+lkl.o: vmlinux
+	cp vmlinux lkl.o
+else
 lkl.o: vmlinux
 	$(OBJCOPY) $(if $(KEEP_EH_FRAMES),,-R .eh_frame) -R .syscall_defs $(foreach sym,$(LKL_ENTRY_POINTS),-G$(prefix)$(sym)) --prefix-symbols=$(prefix) vmlinux lkl.o
+endif
 
+ifneq (,$(filter wasm32 wasm64,$(exec_format)))
+# The wasm __SYSCALL_DEFINE_ARCH hook (arch/lkl/include/asm/unistd.h) emits the
+# syscall signatures into a real WASM custom section "syscall_defs" via the
+# .custom_section.<name> convention. wasm-ld -r concatenates them, so we harvest
+# the header straight from the wasm vmlinux with --dump-section - no mingw32
+# preseed. (llvm-objcopy on wasm supports section dumping.)
+arch/lkl/include/generated/uapi/asm/syscall_defs.h: vmlinux
+	mkdir -p $(dir $@)
+	$(OBJCOPY) --dump-section syscall_defs=$@ $<
+	$(Q) export tmpfile=$(shell mktemp); \
+	sed 's/\x0//g' $@ > $$tmpfile; mv $$tmpfile $@ ; rm -f $$tmpfile
+else
 arch/lkl/include/generated/uapi/asm/syscall_defs.h: vmlinux
 	$(OBJCOPY) -j .syscall_defs -O binary --set-section-flags .syscall_defs=alloc $< $@
 	$(Q) export tmpfile=$(shell mktemp); \
 	sed 's/\x0//g' $@ > $$tmpfile; mv $$tmpfile $@ ; rm -f $$tmpfile
+endif
 
 install: scripts_unifdef
 	@echo "  INSTALL	$(INSTALL_PATH)/lib/lkl.o"
