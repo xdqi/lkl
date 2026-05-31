@@ -23,10 +23,41 @@
 #endif
 
 #ifndef cond_syscall
+#ifdef __wasm__
+/*
+ * wasm-as needs an explicit symbol type for the weak alias. Without
+ * `.type @function` the symbol is emitted as undefined data, which then
+ * fails the final embedder link ("undefined symbol: sys_io_setup" etc.)
+ * even though sys_ni_syscall is a defined function in the same TU.
+ *
+ * Also emit a paired weak alias `lkl_w_<x>` -> `lkl_w_sys_ni_syscall`.
+ * The LKL syscall_table on wasm holds the lkl_w_ wrappers (which all share
+ * one (long,long,long,long,long,long)->long signature, required by wasm
+ * call_indirect). Syscalls not implemented in this build need the matching
+ * wrapper alias too, otherwise the table references an undefined symbol.
+ *
+ * The sys_<x> half stays as inline asm (clean weak alias to sys_ni_syscall,
+ * no C-level visibility needed: sys_<x> only shows up via __SYSCALL macros
+ * which the C compiler already accepts as forward decls). The lkl_w_<x>
+ * half is a C-level `weak, alias` attribute instead — kernel/sys_ni.c
+ * expands cond_syscall() hundreds of times, and emitting both halves via
+ * inline asm there segfaults clang's integrated assembler. The attribute
+ * form also has the side benefit of making lkl_w_<x> a real C declaration,
+ * so syscalls.c's table init can reference it without separate fwd decls.
+ */
+#define cond_syscall(x)							\
+	asm(".weak " __stringify(x) "\n\t"				\
+	    ".type " __stringify(x) ", @function\n\t"			\
+	    ".set  " __stringify(x) ","					\
+		     __stringify(sys_ni_syscall));			\
+	asmlinkage long lkl_w_##x(long, long, long, long, long, long)	\
+		__attribute__((weak, alias("lkl_w_sys_ni_syscall")))
+#else
 #define cond_syscall(x)	asm(				\
 	".weak " __stringify(x) "\n\t"			\
 	".set  " __stringify(x) ","			\
 		 __stringify(sys_ni_syscall))
+#endif
 #endif
 
 #ifndef SYSCALL_ALIAS
