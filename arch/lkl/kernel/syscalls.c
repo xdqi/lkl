@@ -21,6 +21,60 @@ static asmlinkage long sys_virtio_mmio_device_add(long base, long size,
 
 static asmlinkage long sys_new_thread_group_leader(void);
 
+#ifdef __wasm__
+/*
+ * wasm enforces strict signature matching on call_indirect, so the
+ * syscall_table can't hold pointers to per-syscall functions with
+ * varying arities. Instead the table holds uniform `lkl_w_sys*`
+ * trampolines all of type (long*6) -> long: __SYSCALL_DEFINE_ARCH in
+ * arch/lkl/include/asm/unistd.h emits one per SYSCALL_DEFINE; the
+ * sys32_* slots in unistd_32.h get hand-written wrappers in
+ * arch/lkl/kernel/syscalls_32.c; and unimplemented syscalls (cond_syscall)
+ * are aliased to lkl_w_sys_ni_syscall via the wasm cond_syscall override
+ * in include/linux/linkage.h.
+ */
+/* lkl_w_sys_ni_syscall is defined in kernel/sys_ni.c (wasm gate). */
+asmlinkage long lkl_w_sys_ni_syscall(long, long, long, long, long, long);
+
+typedef long (*syscall_handler_t)(long, long, long, long, long, long);
+
+/*
+ * Forward-declare every lkl_w_sys* the table is about to reference. The
+ * defining instances live in scattered TUs (SYSCALL_DEFINEx expansions via
+ * __SYSCALL_DEFINE_ARCH, hand-written sys32_* wrappers in syscalls_32.c,
+ * and cond_syscall weak aliases in sys_ni.c). The C compiler can't see any
+ * of those when it parses this table init, so without these forward decls
+ * each entry expands to a reference to an "undeclared identifier".
+ *
+ * arch/lkl/include/asm/syscalls.h `#define sys_clone sys_ni_syscall` (and
+ * a handful of similar redirects) means we can't `lkl_w_##sym` directly —
+ * the ## operator suppresses macro expansion of its operand, so we'd
+ * mint `lkl_w_sys_clone` (undefined) instead of `lkl_w_sys_ni_syscall`.
+ * Two-level macro forces sym to expand before concatenation.
+ */
+#define __LKL_W_NAME_(s)	lkl_w_##s
+#define __LKL_W_NAME(s)		__LKL_W_NAME_(s)
+
+#undef __SYSCALL
+#define __SYSCALL(nr, sym) \
+	asmlinkage long __LKL_W_NAME(sym)(long, long, long, long, long, long);
+#include <asm/unistd.h>
+#if __BITS_PER_LONG == 32
+#include <asm/unistd_32.h>
+#endif
+
+#undef __SYSCALL
+#define __SYSCALL(nr, sym) [nr] = __LKL_W_NAME(sym),
+
+void *syscall_table[__NR_syscalls] = {
+	[0 ... __NR_syscalls - 1] =  lkl_w_sys_ni_syscall,
+#include <asm/unistd.h>
+
+#if __BITS_PER_LONG == 32
+#include <asm/unistd_32.h>
+#endif
+};
+#else
 typedef long (*syscall_handler_t)(long arg1, ...);
 
 #undef __SYSCALL
@@ -34,6 +88,7 @@ void *syscall_table[__NR_syscalls] = {
 #include <asm/unistd_32.h>
 #endif
 };
+#endif
 
 static long run_syscall(long no, long *params)
 {
