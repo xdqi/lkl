@@ -3,13 +3,51 @@
 // an empty linker script to avoid section merging. For additional information
 // refer to arch/lkl/Makefile.postlink.
 #if !defined(CONFIG_LKL_FUZZING) || defined(LKL_FUZZING_POSTLINK)
+
+#ifdef __wasm__
+/*
+ * wasm-ld's GNU-ld-style SECTIONS support (Joel Severin's linux-wasm patch +
+ * our LKL-side extensions) is more restricted than full GNU ld:
+ *   - SORT_BY_ALIGNMENT() is unsupported; turn it into a no-op.
+ *   - Script-defined symbols can't be re-read inside a dot expression, so the
+ *     generic INIT_TASK_DATA pattern `. = __start_init_stack + THREAD_SIZE`
+ *     fails. Override with a literal ALIGN(THREAD_SIZE) instead.
+ *   - STABS_DEBUG / DWARF_DEBUG sections use `.foo 0 : {...}` which wasm-ld
+ *     rejects ("setting address for .stab to 0"). Drop them - we keep
+ *     symbols/relocs in the wasm `linking` section, not DWARF.
+ */
+#define SORT_BY_ALIGNMENT(files) files
+#endif /* __wasm__ */
+
 #include <asm/vmlinux.lds.h>
 #include <asm/thread_info.h>
 #include <asm/page.h>
 #include <asm/cache.h>
 #include <linux/export.h>
 
+#ifdef __wasm__
+/*
+ * Drop the script-defined symbols (init_stack, __start_init_stack,
+ * __end_init_stack, init_thread_union). Script-defined data symbols are
+ * emitted with WASM_SYMBOL_ABSOLUTE in the wasm linking section; emcc's
+ * stock wasm-ld doesn't resolve those against a real segment in the final
+ * link, so relocations referencing them get baked to 0 (we observed
+ * init_task.stack == NULL after final link). Instead arch/lkl/kernel/setup.c
+ * provides them as C-level aliases of init_thread_info, which IS a real
+ * DATA symbol bound to the section.
+ */
+#undef INIT_TASK_DATA
+#define INIT_TASK_DATA(align)						\
+	. = ALIGN(align);						\
+	KEEP(*(.data..init_thread_info))
+
+#undef STABS_DEBUG
+#define STABS_DEBUG
+#undef DWARF_DEBUG
+#define DWARF_DEBUG
+#else
 OUTPUT_FORMAT(CONFIG_OUTPUT_FORMAT)
+#endif /* __wasm__ */
 
 jiffies = jiffies_64;
 

@@ -22,6 +22,28 @@ asmlinkage long sys_ni_syscall(void)
 	return -ENOSYS;
 }
 
+#ifdef __wasm__
+/*
+ * lkl_w_sys_ni_syscall must live in the same TU as the cond_syscall()
+ * expansions below: the lkl_w_<x> aliases use the C `weak, alias(...)`
+ * attribute, which clang requires the target to be defined in the same
+ * translation unit. The original asm-only form (.weak/.type/.set repeated
+ * hundreds of times in one TU) segfaults clang's integrated assembler.
+ *
+ * This is the (long*6) -> long wrapper that all unimplemented wasm
+ * syscall slots resolve to via the cond_syscall() weak alias. The body
+ * just calls sys_ni_syscall(), which returns -ENOSYS. See the note in
+ * arch/lkl/kernel/syscalls.c for the broader wasm syscall-table design.
+ */
+asmlinkage long lkl_w_sys_ni_syscall(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys_ni_syscall(long a0, long a1, long a2,
+				     long a3, long a4, long a5)
+{
+	(void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+	return sys_ni_syscall();
+}
+#endif
+
 #ifndef COND_SYSCALL
 #define COND_SYSCALL(name) cond_syscall(sys_##name)
 #endif /* COND_SYSCALL */

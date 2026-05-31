@@ -22,6 +22,31 @@ static int is_running;
 void (*pm_power_off)(void) = NULL;
 static unsigned long mem_size = 64 * 1024 * 1024;
 
+#ifdef __wasm__
+/*
+ * The asm-generic linker script defines init_stack, __start_init_stack,
+ * __end_init_stack, and init_thread_union via `name = .` script syntax.
+ * On wasm those land in the linking section as WASM_SYMBOL_ABSOLUTE, and
+ * emcc's stock wasm-ld doesn't resolve absolute data symbols against a
+ * real segment in the final link — relocations referencing them bake to
+ * zero, so init_task.stack ends up NULL and init_idle traps on the first
+ * write. Our wasm-specific override in vmlinux.lds.S drops those script
+ * assignments; init/init_task.c provides init_stack and init_thread_union
+ * as C-level aliases of init_thread_info (real DATA symbol in the
+ * .data..init_thread_info section) when __wasm__ is defined.
+ *
+ * The kernel treats init_stack as a THREAD_SIZE buffer (sched scribbles
+ * an idle-stack canary at offset 8, etc.), so pad the tail of the
+ * .data..init_thread_info section out to THREAD_SIZE. init/init_task.o
+ * emits init_thread_info (sizeof(thread_info) = 0x220 on this build); the
+ * pad fills the rest. arch/lkl/kernel/ is linked after init/init_task.o
+ * so thread_info lands first and the pad follows.
+ */
+#define LKL_THREAD_INFO_SIZE	0x220
+char __wasm_init_thread_info_pad[THREAD_SIZE - LKL_THREAD_INFO_SIZE]
+	__attribute__((__used__, __section__(".data..init_thread_info")));
+#endif
+
 struct screen_info screen_info;
 
 static long lkl_panic_blink(int state)

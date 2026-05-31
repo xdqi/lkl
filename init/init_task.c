@@ -232,4 +232,27 @@ EXPORT_SYMBOL(init_task);
  */
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 struct thread_info init_thread_info __init_thread_info = INIT_THREAD_INFO(init_task);
+
+#ifdef __wasm__
+/*
+ * On the wasm target the asm-generic linker script's script-defined
+ * names (init_stack, init_thread_union) get emitted as
+ * WASM_SYMBOL_ABSOLUTE entries; emcc's stock wasm-ld doesn't resolve
+ * absolute data symbols against real segments, so relocations against
+ * them bake to zero in the final link (observed: init_task.stack == NULL,
+ * init_idle trapping on `*(idle->stack + 8) = 0`).
+ *
+ * arch/lkl drops the script assignments (see arch/lkl/kernel/vmlinux.lds.S)
+ * and pads .data..init_thread_info to THREAD_SIZE (see
+ * arch/lkl/kernel/setup.c). Here we provide init_stack and
+ * init_thread_union as C-level aliases of init_thread_info — same
+ * address, real DATA symbols that wasm-ld resolves correctly. The alias
+ * target must live in the same translation unit, which is why this lives
+ * here rather than in arch code.
+ */
+extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)]
+	__attribute__((alias("init_thread_info")));
+extern union thread_union init_thread_union
+	__attribute__((alias("init_thread_info")));
+#endif
 #endif

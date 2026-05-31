@@ -157,4 +157,115 @@ asmlinkage long sys32_fallocate(int fd, int mode, unsigned offset_lo,
 			     ((u64)len_hi << 32) | len_lo);
 }
 
+#ifdef __wasm__
+/*
+ * wasm syscall_table holds uniform (long*6) -> long funcrefs (see the
+ * note in arch/lkl/kernel/syscalls.c). The 32-bit ABI for LL-arg syscalls
+ * routes them through sys32_<name> via arch/lkl/include/asm/unistd_32.h,
+ * but sys32_* themselves have per-syscall arities (3..6 args) that fail
+ * call_indirect's strict signature check. Hand-write a (long*6) wrapper
+ * for each, forwarding to the real sys32_* with truncating casts.
+ *
+ * Unused trailing args are explicitly cast to void to silence
+ * -Wunused-parameter.
+ */
+asmlinkage long lkl_w_sys32_truncate64(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_truncate64(long a0, long a1, long a2,
+				       long a3, long a4, long a5)
+{
+	(void)a3; (void)a4; (void)a5;
+	return sys32_truncate64((const char __user *)a0,
+				(unsigned long)a1, (unsigned long)a2);
+}
+
+asmlinkage long lkl_w_sys32_ftruncate64(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_ftruncate64(long a0, long a1, long a2,
+					long a3, long a4, long a5)
+{
+	(void)a3; (void)a4; (void)a5;
+	return sys32_ftruncate64((unsigned int)a0,
+				 (unsigned long)a1, (unsigned long)a2);
+}
+
+#ifdef CONFIG_MMU
+asmlinkage long lkl_w_sys32_mmap(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_mmap(long a0, long a1, long a2,
+				 long a3, long a4, long a5)
+{
+	(void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+	return sys32_mmap((struct mmap_arg_struct32 __user *)a0);
+}
+#endif
+
+asmlinkage long lkl_w_sys32_wait4(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_wait4(long a0, long a1, long a2,
+				  long a3, long a4, long a5)
+{
+	(void)a4; (void)a5;
+	return sys32_wait4((pid_t)a0, (unsigned int __user *)a1,
+			   (int)a2, (struct rusage __user *)a3);
+}
+
+asmlinkage long lkl_w_sys32_pread64(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_pread64(long a0, long a1, long a2,
+				    long a3, long a4, long a5)
+{
+	(void)a5;
+	return sys32_pread64((unsigned int)a0, (char __user *)a1,
+			     (u32)a2, (u32)a3, (u32)a4);
+}
+
+asmlinkage long lkl_w_sys32_pwrite64(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_pwrite64(long a0, long a1, long a2,
+				     long a3, long a4, long a5)
+{
+	(void)a5;
+	return sys32_pwrite64((unsigned int)a0, (const char __user *)a1,
+			      (u32)a2, (u32)a3, (u32)a4);
+}
+
+asmlinkage long lkl_w_sys32_fadvise64_64(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_fadvise64_64(long a0, long a1, long a2,
+					 long a3, long a4, long a5)
+{
+	return sys32_fadvise64_64((int)a0, (__u32)a1, (__u32)a2,
+				  (__u32)a3, (__u32)a4, (int)a5);
+}
+
+asmlinkage long lkl_w_sys32_readahead(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_readahead(long a0, long a1, long a2,
+				      long a3, long a4, long a5)
+{
+	(void)a4; (void)a5;
+	return sys32_readahead((int)a0, (unsigned)a1,
+			       (unsigned)a2, (size_t)a3);
+}
+
+asmlinkage long lkl_w_sys32_sync_file_range(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_sync_file_range(long a0, long a1, long a2,
+					    long a3, long a4, long a5)
+{
+	return sys32_sync_file_range((int)a0, (unsigned)a1, (unsigned)a2,
+				     (unsigned)a3, (unsigned)a4,
+				     (unsigned int)a5);
+}
+
+asmlinkage long lkl_w_sys32_sync_file_range2(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_sync_file_range2(long a0, long a1, long a2,
+					     long a3, long a4, long a5)
+{
+	return sys32_sync_file_range2((int)a0, (unsigned int)a1,
+				      (unsigned)a2, (unsigned)a3,
+				      (unsigned)a4, (unsigned)a5);
+}
+
+asmlinkage long lkl_w_sys32_fallocate(long, long, long, long, long, long);
+asmlinkage long lkl_w_sys32_fallocate(long a0, long a1, long a2,
+				      long a3, long a4, long a5)
+{
+	return sys32_fallocate((int)a0, (int)a1, (unsigned)a2,
+			       (unsigned)a3, (unsigned)a4, (unsigned)a5);
+}
+#endif /* __wasm__ */
+
 #endif
