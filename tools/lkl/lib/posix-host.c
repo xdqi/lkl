@@ -35,11 +35,31 @@
 #define SHARE_SEM 0
 #endif /* _POSIX_SEMAPHORES */
 
+#ifdef __wasm__
+#include <emscripten/console.h>
+#endif
+
 static void print(const char *str, int len)
 {
+#ifdef __wasm__
+	/*
+	 * write(STDOUT_FILENO) on a pthread worker proxies to the main thread
+	 * via postMessage, which is async — if the worker traps before the
+	 * message dispatches, the output is lost. emscripten_console_log is
+	 * synchronous (direct console.log call from the worker context) so
+	 * boot-time prints survive even when followed by a crash. Copy the
+	 * caller's buffer because it isn't NUL-terminated.
+	 */
+	char tmp[512];
+	int n = len < (int)sizeof(tmp) - 1 ? len : (int)sizeof(tmp) - 1;
+	memcpy(tmp, str, n);
+	tmp[n] = '\0';
+	emscripten_console_log(tmp);
+#else
 	int ret __attribute__((unused));
 
 	ret = write(STDOUT_FILENO, str, len);
+#endif
 }
 
 struct lkl_mutex {
@@ -397,6 +417,97 @@ static unsigned long long time_ns(void)
 	return 1e9*ts.tv_sec + ts.tv_nsec;
 }
 
+#ifdef __wasm__
+/*
+ * emscripten declares POSIX timer_create/timer_settime/timer_delete in
+ * <time.h> but does not implement them. Emulate one-shot timers with a
+ * dedicated pthread per timer: the thread sleeps on a condvar (or until the
+ * armed deadline), fires the callback, and loops. -pthread is required.
+ */
+struct wasm_timer {
+	pthread_t thread;
+	pthread_mutex_t mu;
+	pthread_cond_t cv;
+	void (*fn)(void);
+	unsigned long armed_ns; /* 0 == disarmed */
+	int stop;
+};
+
+static void *wasm_timer_thread(void *arg)
+{
+	struct wasm_timer *t = arg;
+
+	pthread_mutex_lock(&t->mu);
+	for (;;) {
+		while (!t->stop && t->armed_ns == 0)
+			pthread_cond_wait(&t->cv, &t->mu);
+		if (t->stop)
+			break;
+		unsigned long ns = t->armed_ns;
+		t->armed_ns = 0;
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_sec += ns / 1000000000;
+		ts.tv_nsec += ns % 1000000000;
+		if (ts.tv_nsec >= 1000000000) {
+			ts.tv_sec += 1;
+			ts.tv_nsec -= 1000000000;
+		}
+		int rc = pthread_cond_timedwait(&t->cv, &t->mu, &ts);
+		if (t->stop)
+			break;
+		if (rc == ETIMEDOUT) {
+			void (*fn)(void) = t->fn;
+			pthread_mutex_unlock(&t->mu);
+			fn();
+			pthread_mutex_lock(&t->mu);
+		}
+	}
+	pthread_mutex_unlock(&t->mu);
+	return NULL;
+}
+
+static void *timer_alloc(void (*fn)(void))
+{
+	struct wasm_timer *t = calloc(1, sizeof(*t));
+
+	if (!t)
+		return NULL;
+	t->fn = fn;
+	pthread_mutex_init(&t->mu, NULL);
+	pthread_cond_init(&t->cv, NULL);
+	if (pthread_create(&t->thread, NULL, wasm_timer_thread, t)) {
+		free(t);
+		return NULL;
+	}
+	return t;
+}
+
+static int timer_set_oneshot(void *_timer, unsigned long ns)
+{
+	struct wasm_timer *t = _timer;
+
+	pthread_mutex_lock(&t->mu);
+	t->armed_ns = ns;
+	pthread_cond_signal(&t->cv);
+	pthread_mutex_unlock(&t->mu);
+	return 0;
+}
+
+static void timer_free(void *_timer)
+{
+	struct wasm_timer *t = _timer;
+
+	pthread_mutex_lock(&t->mu);
+	t->stop = 1;
+	pthread_cond_signal(&t->cv);
+	pthread_mutex_unlock(&t->mu);
+	pthread_join(t->thread, NULL);
+	pthread_mutex_destroy(&t->mu);
+	pthread_cond_destroy(&t->cv);
+	free(t);
+}
+#else
 static void lkl_timer_callback(union sigval sv)
 {
 	void (*fn)(void) = sv.sival_ptr;
@@ -442,6 +553,7 @@ static void timer_free(void *_timer)
 
 	timer_delete(timer);
 }
+#endif
 
 static void panic(void)
 {
